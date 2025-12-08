@@ -1,9 +1,8 @@
-import React from 'react';
-import { UserPreferences } from '../types';
-import { 
-  Music, Globe, Anchor, Camera, Palette, Cpu, Plane, Dna, Trophy, Zap, 
+import type { UserPreferences } from '@/lib/types';
+import {
+  Music, Globe, Anchor, Camera, Palette, Cpu, Plane, Dna, Trophy, Zap,
   Heart, Star, Sun, Moon, Cloud, Flower, Coffee, BookOpen, Smile, Gamepad2,
-  Feather, Compass
+  Feather, Compass,
 } from 'lucide-react';
 
 // --- Icon Selection Logic ---
@@ -29,7 +28,7 @@ interface IntroductionPageProps {
   prefs: UserPreferences;
 }
 
-export const IntroductionPage: React.FC<IntroductionPageProps> = ({ prefs }) => {
+export const IntroductionPage = ({ prefs }: IntroductionPageProps) => {
   return (
     <div className="book-page">
       <div className="book-shadow-spine"></div>
@@ -73,7 +72,7 @@ interface ChapterPageProps {
   interest: string;
 }
 
-export const ChapterPage: React.FC<ChapterPageProps> = ({ month, interest }) => {
+export const ChapterPage = ({ month, interest }: ChapterPageProps) => {
   const Icon = getIconForInterest(interest);
 
   return (

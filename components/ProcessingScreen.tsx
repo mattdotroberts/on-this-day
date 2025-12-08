@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { Hourglass, Search, PenTool, Book, Sparkles, CheckCircle2 } from 'lucide-react';
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Hourglass, Search, PenTool, Book, CheckCircle2 } from 'lucide-react';
 
 interface ProcessingScreenProps {
   isGenerating: boolean;
@@ -20,7 +22,7 @@ const LOG_MESSAGES = [
   "Polishing the Cover...",
 ];
 
-export const ProcessingScreen: React.FC<ProcessingScreenProps> = ({ isGenerating }) => {
+export const ProcessingScreen = ({ isGenerating }: ProcessingScreenProps) => {
   const [currentLog, setCurrentLog] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
 

@@ -1,26 +1,42 @@
-import React, { useRef, useState } from 'react';
-import { BookEntry, UserPreferences, Book, MONTHS, CoverStyle } from '../types';
+'use client';
+
+import { useRef, useState } from 'react';
+import type { ClientBookEntry, UserPreferences, ClientBook, CoverStyle } from '@/lib/types';
+import { MONTHS } from '@/lib/types';
 import { EntryCard } from './EntryCard';
 import { IntroductionPage, ChapterPage } from './BookPages';
-import { Printer, ArrowLeft, Share2, Check, Image as ImageIcon, X, Loader2, Book as BookIcon, Box, Sparkles, Camera, Palette } from 'lucide-react';
-import { encodeBookForUrl } from '../utils/sharing';
-import { generateBookCover } from '../services/geminiService';
+import { ArrowLeft, Share2, Check, Image as ImageIcon, X, Loader2, Book as BookIcon, Box, Sparkles, Camera, Palette, Download, Globe, Lock, BookOpen, Plus } from 'lucide-react';
+import { AddEntryModal } from './AddEntryModal';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 interface BookPreviewProps {
-  entries: BookEntry[];
+  entries: ClientBookEntry[];
   prefs: UserPreferences;
   onReset: () => void;
   isReadOnly?: boolean;
-  coverImage?: string; 
-  currentBook?: Book | null;
+  coverImage?: string;
+  currentBook?: ClientBook | null;
   onUpdateCover?: (bookId: string, newCover: string, newStyle: string) => void;
+  onTogglePrivacy?: (bookId: string, isPublic: boolean) => void;
+  onRegenerateEntry?: (index: number, newEntry: ClientBookEntry) => void;
+  onAddEntry?: (index: number, newEntry: ClientBookEntry) => void;
+  additionalEntryCount?: number;
+  isOwner?: boolean;
 }
 
-export const BookPreview: React.FC<BookPreviewProps> = ({ entries, prefs, onReset, isReadOnly = false, coverImage, currentBook, onUpdateCover }) => {
+export const BookPreview = ({ entries, prefs, onReset, isReadOnly = false, coverImage, currentBook, onUpdateCover, onTogglePrivacy, onRegenerateEntry, onAddEntry, additionalEntryCount = 0, isOwner = false }: BookPreviewProps) => {
   const componentRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isTogglingPrivacy, setIsTogglingPrivacy] = useState(false);
+  const [localIsPublic, setLocalIsPublic] = useState(currentBook?.isPublic ?? true);
+  const [isDownloadingEpub, setIsDownloadingEpub] = useState(false);
+  const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
+  const [isAddEntryModalOpen, setIsAddEntryModalOpen] = useState(false);
+  const [localAdditionalCount, setLocalAdditionalCount] = useState(additionalEntryCount);
+
   // Edit Cover State
   const [isEditingCover, setIsEditingCover] = useState(false);
   const [selectedStyle, setSelectedStyle] = useState<CoverStyle>(prefs.coverStyle);
@@ -30,53 +46,217 @@ export const BookPreview: React.FC<BookPreviewProps> = ({ entries, prefs, onRese
   const currentYear = new Date().getFullYear();
   const age = isNaN(birthYearInt) ? 0 : currentYear - birthYearInt;
 
-  const handlePrint = () => {
-    window.print();
+  const handleDownload = async () => {
+    if (!componentRef.current) return;
+
+    setIsDownloading(true);
+    try {
+      // Get all book pages
+      const pages = componentRef.current.querySelectorAll('.book-page');
+      if (pages.length === 0) {
+        throw new Error('No pages found');
+      }
+
+      // A5 dimensions in mm
+      const a5Width = 148;
+      const a5Height = 210;
+
+      // Create PDF in A5 format
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: [a5Width, a5Height]
+      });
+
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i] as HTMLElement;
+
+        // Capture page as canvas
+        const canvas = await html2canvas(page, {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false
+        });
+
+        // Convert to image
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+        // Calculate dimensions to fit A5 - constrain to page bounds
+        let imgWidth = a5Width;
+        let imgHeight = (canvas.height * a5Width) / canvas.width;
+
+        // If image is taller than A5 page, scale down to fit
+        if (imgHeight > a5Height) {
+          imgHeight = a5Height;
+          imgWidth = (canvas.width * a5Height) / canvas.height;
+        }
+
+        // Add new page for all pages after the first
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        // Center horizontally if image is narrower than page
+        const xOffset = imgWidth < a5Width ? (a5Width - imgWidth) / 2 : 0;
+        // Center vertically if image is shorter than page
+        const yOffset = imgHeight < a5Height ? (a5Height - imgHeight) / 2 : 0;
+
+        pdf.addImage(imgData, 'JPEG', xOffset, yOffset, imgWidth, imgHeight);
+      }
+
+      // Download the PDF
+      pdf.save(`${prefs.name}-year-in-history.pdf`);
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleShare = async () => {
-    if (!currentBook) return;
-    
+    if (!currentBook || !currentBook.id) {
+      alert('Book must be saved before sharing');
+      return;
+    }
+
     setIsSharing(true);
-    await new Promise(r => setTimeout(r, 500));
-    const encoded = encodeBookForUrl(currentBook);
-    const url = `${window.location.origin}${window.location.pathname}?share=${encoded}`;
-    
+    await new Promise((r) => setTimeout(r, 500));
+    const url = `${window.location.origin}/share/${currentBook.id}`;
+
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(url);
         setCopied(true);
         setTimeout(() => setCopied(false), 3000);
       } else {
-        alert("Clipboard API not available. Copy this link manually:\n" + url);
+        alert('Clipboard API not available. Copy this link manually:\n' + url);
       }
     } catch (err) {
       console.error('Failed to copy', err);
-      alert("Failed to copy link. Please try again.");
+      alert('Failed to copy link. Please try again.');
     } finally {
       setIsSharing(false);
     }
   };
 
   const handleRegenerateCover = async () => {
-    if (!currentBook || !onUpdateCover || !process.env.API_KEY) return;
-    
+    if (!currentBook || !onUpdateCover) return;
+
     setIsRegeneratingCover(true);
     try {
-        // Create temporary prefs with the new style
-        const tempPrefs = { ...prefs, coverStyle: selectedStyle };
-        const newCover = await generateBookCover(tempPrefs, process.env.API_KEY);
-        
-        if (newCover) {
-            onUpdateCover(currentBook.id, newCover, selectedStyle);
-            setIsEditingCover(false);
-        }
+      const tempPrefs = { ...prefs, coverStyle: selectedStyle };
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(tempPrefs),
+      });
+
+      if (!res.ok) throw new Error('Failed to regenerate cover');
+
+      const { coverImage: newCover } = await res.json();
+
+      if (newCover) {
+        onUpdateCover(currentBook.id, newCover, selectedStyle);
+        setIsEditingCover(false);
+      }
     } catch (error) {
-        console.error("Failed to update cover", error);
-        alert("Could not generate new cover. Please try again.");
+      console.error('Failed to update cover', error);
+      alert('Could not generate new cover. Please try again.');
     } finally {
-        setIsRegeneratingCover(false);
+      setIsRegeneratingCover(false);
     }
+  };
+
+  const handleTogglePrivacy = async () => {
+    if (!currentBook || !onTogglePrivacy) return;
+
+    setIsTogglingPrivacy(true);
+    try {
+      const newIsPublic = !localIsPublic;
+      await onTogglePrivacy(currentBook.id, newIsPublic);
+      setLocalIsPublic(newIsPublic);
+    } catch (error) {
+      console.error('Failed to toggle privacy', error);
+      alert('Could not update privacy setting. Please try again.');
+    } finally {
+      setIsTogglingPrivacy(false);
+    }
+  };
+
+  const handleDownloadEpub = async () => {
+    if (!currentBook || !currentBook.id) {
+      alert('Book must be saved before downloading EPUB');
+      return;
+    }
+
+    setIsDownloadingEpub(true);
+    try {
+      const response = await fetch(`/api/books/${currentBook.id}/epub`);
+      if (!response.ok) {
+        throw new Error('Failed to generate EPUB');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${prefs.name}-year-in-history.epub`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('EPUB download failed:', error);
+      alert('Failed to download EPUB. Please try again.');
+    } finally {
+      setIsDownloadingEpub(false);
+    }
+  };
+
+  const handleRegenerateEntry = async (index: number) => {
+    if (!currentBook || !onRegenerateEntry) return;
+
+    setRegeneratingIndex(index);
+    try {
+      const res = await fetch(`/api/books/${currentBook.id}/entries/${index}/regenerate`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to regenerate entry');
+      }
+
+      const { entry: newEntry } = await res.json();
+      onRegenerateEntry(index, newEntry);
+    } catch (error) {
+      console.error('Failed to regenerate entry', error);
+      alert('Could not regenerate entry. Please try again.');
+    } finally {
+      setRegeneratingIndex(null);
+    }
+  };
+
+  const handleAddEntry = async (month: string, day: number) => {
+    if (!currentBook || !onAddEntry) return;
+
+    const res = await fetch(`/api/books/${currentBook.id}/entries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ month, day }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error || 'Failed to add entry');
+    }
+
+    const { entry: newEntry, index, additionalEntryCount: newCount } = await res.json();
+    setLocalAdditionalCount(newCount);
+    onAddEntry(index, newEntry);
   };
 
   // Styles configuration (Matches GeneratorForm)
@@ -155,7 +335,23 @@ export const BookPreview: React.FC<BookPreviewProps> = ({ entries, prefs, onRese
             );
         }
 
-        pages.push(<EntryCard key={`entry-${index}`} entry={entry} index={index} />);
+        // Check if this entry is the birthday entry
+        const isBirthdayEntry = entry.day.toLowerCase().includes(prefs.birthMonth.toLowerCase()) &&
+          entry.day.includes(prefs.birthDay.toString()) &&
+          entry.year === prefs.birthYear;
+
+        pages.push(
+          <EntryCard
+            key={`entry-${index}`}
+            entry={entry}
+            index={index}
+            isBirthday={isBirthdayEntry}
+            birthdayMessage={currentBook?.prefs.birthdayMessage || prefs.birthdayMessage}
+            isOwner={isOwner && !isReadOnly}
+            isRegenerating={regeneratingIndex === index}
+            onRegenerate={onRegenerateEntry ? handleRegenerateEntry : undefined}
+          />
+        );
     });
 
     return pages;
@@ -180,6 +376,37 @@ export const BookPreview: React.FC<BookPreviewProps> = ({ entries, prefs, onRese
           </div>
 
           <div className="flex items-center gap-3">
+             {/* Privacy Toggle - Owner Only */}
+             {isOwner && currentBook && onTogglePrivacy && (
+                <button
+                    onClick={handleTogglePrivacy}
+                    disabled={isTogglingPrivacy}
+                    className={`flex items-center gap-2 border px-4 py-2 rounded-full transition-all shadow-sm ${localIsPublic ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100' : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'}`}
+                    title={localIsPublic ? 'Book is public - click to make private' : 'Book is private - click to make public'}
+                >
+                    {isTogglingPrivacy ? (
+                        <span className="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></span>
+                    ) : localIsPublic ? (
+                        <Globe className="w-4 h-4" />
+                    ) : (
+                        <Lock className="w-4 h-4" />
+                    )}
+                    <span className="hidden sm:inline">{localIsPublic ? 'Public' : 'Private'}</span>
+                </button>
+             )}
+
+             {/* Add Entry Button - Owner Only */}
+             {isOwner && currentBook && onAddEntry && (
+                <button
+                    onClick={() => setIsAddEntryModalOpen(true)}
+                    className="flex items-center gap-2 border border-amber-200 bg-amber-50 text-amber-700 px-4 py-2 rounded-full hover:bg-amber-100 transition-colors shadow-sm"
+                    title={`Add entry (${10 - localAdditionalCount} remaining)`}
+                >
+                    <Plus className="w-4 h-4" />
+                    <span className="hidden sm:inline">Add Entry</span>
+                </button>
+             )}
+
              {currentBook && onUpdateCover && (
                 <button
                     onClick={() => setIsEditingCover(true)}
@@ -199,11 +426,35 @@ export const BookPreview: React.FC<BookPreviewProps> = ({ entries, prefs, onRese
                 <span className="hidden sm:inline">{copied ? "Copied" : "Share"}</span>
              </button>
 
-            <button 
-              onClick={handlePrint}
-              className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2 rounded-full hover:bg-slate-800 transition-colors shadow-lg"
+            {/* EPUB Download Button */}
+            {currentBook && (
+              <button
+                onClick={handleDownloadEpub}
+                disabled={isDownloadingEpub}
+                className="flex items-center gap-2 border border-slate-200 bg-white text-slate-700 px-4 py-2 rounded-full hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+                title="Download for Kindle/Apple Books"
+              >
+                {isDownloadingEpub ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <BookOpen className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">{isDownloadingEpub ? 'Creating...' : 'EPUB'}</span>
+              </button>
+            )}
+
+            {/* PDF Download Button */}
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading}
+              className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2 rounded-full hover:bg-slate-800 transition-colors shadow-lg disabled:opacity-50"
             >
-              <Printer className="w-4 h-4" /> <span className="hidden sm:inline">Print Book</span>
+              {isDownloading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              <span className="hidden sm:inline">{isDownloading ? 'Generating...' : 'PDF'}</span>
             </button>
           </div>
         </div>
@@ -274,6 +525,15 @@ export const BookPreview: React.FC<BookPreviewProps> = ({ entries, prefs, onRese
             </div>
         </div>
       )}
+
+      {/* Add Entry Modal */}
+      <AddEntryModal
+        isOpen={isAddEntryModalOpen}
+        onClose={() => setIsAddEntryModalOpen(false)}
+        onAdd={handleAddEntry}
+        additionalCount={localAdditionalCount}
+        maxAdditional={10}
+      />
     </div>
   );
 };
