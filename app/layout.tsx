@@ -1,20 +1,7 @@
 import type { Metadata } from 'next';
-import { stackServerApp, authEnabled } from '@/lib/stack';
+import { StackProvider, StackTheme } from '@stackframe/stack';
+import { stackServerApp } from '@/lib/stack';
 import './globals.css';
-
-// Try to get Stack providers, use pass-through stubs if unavailable
-let StackProvider: React.ComponentType<{ app: unknown; children: React.ReactNode }>;
-let StackTheme: React.ComponentType<{ children: React.ReactNode }>;
-
-try {
-  const stack = require('@stackframe/stack');
-  StackProvider = stack.StackProvider;
-  StackTheme = stack.StackTheme;
-} catch {
-  // Pass-through stubs
-  StackProvider = ({ children }) => <>{children}</>;
-  StackTheme = ({ children }) => <>{children}</>;
-}
 
 export const metadata: Metadata = {
   title: "A Year's History Of - Personalized History Books",
@@ -26,15 +13,6 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Only wrap with Stack providers if auth is enabled
-  const content = authEnabled ? (
-    <StackProvider app={stackServerApp}>
-      <StackTheme>{children}</StackTheme>
-    </StackProvider>
-  ) : (
-    children
-  );
-
   return (
     <html lang="en">
       <head>
@@ -45,7 +23,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{content}</body>
+      <body>
+        <StackProvider app={stackServerApp}>
+          <StackTheme>{children}</StackTheme>
+        </StackProvider>
+      </body>
     </html>
   );
 }
