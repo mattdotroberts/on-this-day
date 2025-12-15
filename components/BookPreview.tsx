@@ -112,8 +112,31 @@ export const BookPreview = ({ entries, prefs, onReset, isReadOnly = false, cover
         }
 
         if (isCoverPage) {
-          // Cover page: fill the entire A5 page edge-to-edge
-          pdf.addImage(imgData, 'JPEG', 0, 0, a5Width, a5Height);
+          // Cover page: fit to A5 while preserving aspect ratio, centered
+          const canvasAspect = canvas.width / canvas.height;
+          const pageAspect = a5Width / a5Height;
+
+          let imgWidth: number, imgHeight: number, xOffset: number, yOffset: number;
+
+          if (canvasAspect > pageAspect) {
+            // Canvas is wider than page - fit to width
+            imgWidth = a5Width;
+            imgHeight = a5Width / canvasAspect;
+            xOffset = 0;
+            yOffset = (a5Height - imgHeight) / 2;
+          } else {
+            // Canvas is taller than page - fit to height
+            imgHeight = a5Height;
+            imgWidth = a5Height * canvasAspect;
+            xOffset = (a5Width - imgWidth) / 2;
+            yOffset = 0;
+          }
+
+          // Fill background first (in case of letterboxing)
+          pdf.setFillColor(42, 42, 42); // #2A2A2A
+          pdf.rect(0, 0, a5Width, a5Height, 'F');
+
+          pdf.addImage(imgData, 'JPEG', xOffset, yOffset, imgWidth, imgHeight);
         } else {
           // Regular pages: maintain aspect ratio and center
           let imgWidth = a5Width;
@@ -473,7 +496,7 @@ export const BookPreview = ({ entries, prefs, onReset, isReadOnly = false, cover
     
     // 1. Cover - Show AI-generated image full screen (override book-page padding)
     pages.push(
-      <div key="cover" className="book-page !p-0 bg-[#2A2A2A] overflow-hidden relative print:block">
+      <div key="cover" className="book-page cover-page overflow-hidden relative print:block">
         {coverImage ? (
           <img src={coverImage} alt="Cover" className="w-full h-full object-cover" />
         ) : (

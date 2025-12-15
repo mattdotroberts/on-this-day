@@ -291,12 +291,13 @@ async function generateBookCover(
 
   // Craft a safe, descriptive prompt for image generation
   const prompt = `
-    A beautiful artistic book cover design.
+    A beautiful artistic book cover design that fills the entire canvas edge-to-edge.
     ${textInstruction}
     Theme: history, heritage, and personal milestones.
     Visual elements inspired by: ${prefs.interests.slice(0, 3).join(', ')}.
     Style: ${stylePrompt}
-    Format: Portrait aspect ratio suitable for a book cover.
+    Format: Portrait aspect ratio (2:3) suitable for a book cover.
+    IMPORTANT: The design must extend to all edges with NO borders, NO margins, NO frames, and NO empty space around the edges. The artwork should bleed off all four sides of the canvas.
     Professional quality, elegant design with subtle textures and warm colors.
   `.trim();
 

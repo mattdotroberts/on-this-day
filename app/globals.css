@@ -37,6 +37,21 @@ body {
   font-size: 13px;
 }
 
+/* Cover page - no padding, image fills entire page */
+.book-page.cover-page {
+  padding: 0 !important;
+  margin: 0 auto 2rem auto;
+  background: #2A2A2A !important;
+  display: block;
+}
+
+.book-page.cover-page img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* Ensure text content doesn't overflow */
 .book-page .entry-content {
   overflow: hidden;
