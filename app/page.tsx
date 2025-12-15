@@ -126,25 +126,14 @@ export default function Home() {
     loadBooks();
   }, []);
 
-  // Check for shared book in URL on mount
+  // Check for legacy ?book= URL and redirect to proper route
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const bookId = params.get('book');
     if (bookId) {
-      fetch(`/api/books/${bookId}`)
-        .then((res) => res.json())
-        .then((book) => {
-          if (book && !book.error) {
-            setPrefs(book.prefs);
-            setEntries(book.entries);
-            setCurrentBook(book);
-            setAppState(AppState.PREVIEW);
-          }
-        })
-        .catch(console.error);
-      window.history.replaceState({}, '', window.location.pathname);
+      router.replace(`/book/${bookId}`);
     }
-  }, []);
+  }, [router]);
 
   const handleStart = () => {
     setAppState(AppState.FORM);
@@ -229,8 +218,8 @@ export default function Home() {
       setCurrentBook(newBook);
       setGallery((prev) => [newBook, ...prev]);
 
-      // Update URL so book persists on refresh
-      window.history.pushState({}, '', `?book=${id}`);
+      // Redirect to the book page (proper URL routing)
+      router.push(`/book/${id}`);
 
       setTimeout(() => {
         setAppState(AppState.PREVIEW);
@@ -317,14 +306,19 @@ export default function Home() {
     setEntries([]);
     setCurrentBook(null);
     setError(null);
-    window.history.replaceState({}, '', window.location.pathname);
   };
 
   const handleViewBook = (book: ClientBook) => {
-    setPrefs(book.prefs);
-    setEntries(book.entries);
-    setCurrentBook(book);
-    setAppState(AppState.PREVIEW);
+    // For sample books without real IDs, show inline preview
+    if (book.id.startsWith('sample-')) {
+      setPrefs(book.prefs);
+      setEntries(book.entries);
+      setCurrentBook(book);
+      setAppState(AppState.PREVIEW);
+    } else {
+      // Real books get proper URL routing
+      router.push(`/book/${book.id}`);
+    }
   };
 
   return (

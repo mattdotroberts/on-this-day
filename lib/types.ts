@@ -14,6 +14,11 @@ export interface UserPreferences {
   blendLevel: BlendLevel;
   coverStyle: CoverStyle;
   birthdayMessage?: string;
+  // Cover text options
+  coverTitle?: string;        // Default: "On This Day"
+  coverSubtitle?: string;     // Default: "Curated for [name]"
+  includeCoverText?: boolean; // Default: true
+  prefaceText?: string;       // Custom preface text (uses default if not set)
 }
 
 export interface Source {
@@ -49,6 +54,7 @@ export interface ClientBook {
   generationStatus?: 'pending' | 'generating' | 'complete' | 'failed';
   entryCount?: number;
   birthdayMessage?: string;
+  prefaceText?: string;
 }
 
 export const MONTHS = [

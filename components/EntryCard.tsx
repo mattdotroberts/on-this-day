@@ -1,5 +1,5 @@
 import type { ClientBookEntry } from '@/lib/types';
-import { ExternalLink, Library, Gift, RefreshCw } from 'lucide-react';
+import { ExternalLink, Library, Gift, RefreshCw, Volume2, Loader2 } from 'lucide-react';
 
 interface EntryCardProps {
   entry: ClientBookEntry;
@@ -9,9 +9,12 @@ interface EntryCardProps {
   isOwner?: boolean;
   isRegenerating?: boolean;
   onRegenerate?: (index: number) => void;
+  onNarrate?: (index: number) => void;
+  isNarrating?: boolean;
+  isLoadingAudio?: boolean;
 }
 
-export const EntryCard = ({ entry, index, isBirthday, birthdayMessage, isOwner, isRegenerating, onRegenerate }: EntryCardProps) => {
+export const EntryCard = ({ entry, index, isBirthday, birthdayMessage, isOwner, isRegenerating, onRegenerate, onNarrate, isNarrating, isLoadingAudio }: EntryCardProps) => {
   return (
     <div className="book-page">
       <div className="book-shadow-spine"></div>
@@ -26,17 +29,40 @@ export const EntryCard = ({ entry, index, isBirthday, birthdayMessage, isOwner, 
             <span className="text-amber-700 font-bold text-base decoration-2 underline decoration-amber-200 decoration-wavy underline-offset-4">{entry.year}</span>
         </h3>
 
-        {/* Regenerate button - owner only, not during PDF export */}
-        {isOwner && onRegenerate && (
-          <button
-            onClick={() => onRegenerate(index)}
-            disabled={isRegenerating}
-            className="absolute top-0 right-0 p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-full transition-colors disabled:opacity-50 print:hidden"
-            title="Regenerate this entry"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
-          </button>
-        )}
+        {/* Action buttons - top right corner */}
+        <div className="absolute top-0 right-0 flex items-center gap-1 print:hidden">
+          {/* Play button for narration */}
+          {onNarrate && (
+            <button
+              onClick={() => onNarrate(index)}
+              disabled={isLoadingAudio}
+              className={`p-1.5 rounded-full transition-colors ${
+                isNarrating
+                  ? 'text-amber-600 bg-amber-50'
+                  : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
+              } disabled:opacity-50`}
+              title={isNarrating ? 'Playing...' : 'Listen to this entry'}
+            >
+              {isLoadingAudio ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Volume2 className={`w-3.5 h-3.5 ${isNarrating ? 'animate-pulse' : ''}`} />
+              )}
+            </button>
+          )}
+
+          {/* Regenerate button - owner only */}
+          {isOwner && onRegenerate && (
+            <button
+              onClick={() => onRegenerate(index)}
+              disabled={isRegenerating}
+              className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-full transition-colors disabled:opacity-50"
+              title="Regenerate this entry"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Content - Flex grow to fill space */}
@@ -47,7 +73,7 @@ export const EntryCard = ({ entry, index, isBirthday, birthdayMessage, isOwner, 
 
         {/* Main Text Body - Smaller text for better fit */}
         <div className="text-justify font-serif-display text-sm leading-relaxed text-slate-700 mb-4 w-full">
-            <p className="first-letter:text-4xl first-letter:font-cinzel first-letter:text-amber-800 first-letter:mr-2 first-letter:float-left first-letter:leading-[0.8]">
+            <p className="drop-cap">
                 {entry.historyEvent}
             </p>
         </div>
@@ -100,11 +126,6 @@ export const EntryCard = ({ entry, index, isBirthday, birthdayMessage, isOwner, 
           </div>
         )}
 
-        <div className="flex justify-center items-center text-[9px] text-slate-300 font-cinzel tracking-[0.2em]">
-            <span className="opacity-50 mx-1">~</span>
-            <span>{entry.whyIncluded}</span>
-            <span className="opacity-50 mx-1">~</span>
-        </div>
       </div>
     </div>
   );

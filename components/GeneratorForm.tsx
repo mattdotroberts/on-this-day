@@ -1,12 +1,21 @@
 'use client';
 
-import { useState, KeyboardEvent } from 'react';
+import { useState, KeyboardEvent, useEffect } from 'react';
 import { useUser, authEnabled } from '@/lib/auth-client';
 import type { UserPreferences, BlendLevel, CoverStyle } from '@/lib/types';
 import { MONTHS } from '@/lib/types';
-import { ArrowRight, ArrowLeft, X, Plus, Settings2, Book, Camera, Sparkles, Box, Focus, GitMerge, Palette, Calendar, Zap, Gift, RefreshCw } from 'lucide-react';
+import { ArrowRight, ArrowLeft, X, Plus, Settings2, Book, Camera, Sparkles, Box, Focus, GitMerge, Palette, Calendar, Zap, Gift, RefreshCw, CreditCard, Printer, Download, Check } from 'lucide-react';
 
 export type BookType = 'sample' | 'full';
+
+interface PriceInfo {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  priceFormatted: string;
+  includesPrint: boolean;
+}
 
 interface GeneratorFormProps {
   onSubmit: (prefs: UserPreferences, bookType: BookType) => void;
@@ -47,6 +56,20 @@ export const GeneratorForm = ({ onSubmit, onBack, isGenerating }: GeneratorFormP
   const [bookType, setBookType] = useState<BookType>('sample');
   const [birthdayMessage, setBirthdayMessage] = useState('');
   const [suggestionPage, setSuggestionPage] = useState(0);
+
+  // Payment modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<'digital' | 'printedDigital'>('digital');
+  const [prices, setPrices] = useState<{ digital: PriceInfo; printedDigital: PriceInfo } | null>(null);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
+
+  // Fetch prices on mount
+  useEffect(() => {
+    fetch('/api/checkout')
+      .then(res => res.json())
+      .then(data => setPrices(data.prices))
+      .catch(console.error);
+  }, []);
 
   // Get current suggestions (6 at a time), excluding already selected interests
   const getVisibleSuggestions = () => {
@@ -100,14 +123,10 @@ export const GeneratorForm = ({ onSubmit, onBack, isGenerating }: GeneratorFormP
       // If user is not logged in, force sample type
       const finalBookType = user && authEnabled ? bookType : 'sample';
 
-      // Confirm before generating full book (expensive operation)
+      // For full book, show payment modal instead
       if (finalBookType === 'full') {
-        const confirmed = window.confirm(
-          `Generate a full 365-day book for ${name}?\n\n` +
-          `This will create one entry for every day of the year and takes ~15-20 minutes to complete.\n\n` +
-          `You'll be notified by email when it's ready.`
-        );
-        if (!confirmed) return;
+        setShowPaymentModal(true);
+        return;
       }
 
       onSubmit({
@@ -120,6 +139,50 @@ export const GeneratorForm = ({ onSubmit, onBack, isGenerating }: GeneratorFormP
         coverStyle,
         birthdayMessage: birthdayMessage.trim() || undefined
       }, finalBookType);
+    }
+  };
+
+  const handleCheckout = async () => {
+    if (!user) return;
+
+    setIsCheckingOut(true);
+    try {
+      const bookPrefs = {
+        name,
+        birthYear,
+        birthDay,
+        birthMonth,
+        interests,
+        blendLevel,
+        coverStyle,
+        birthdayMessage: birthdayMessage.trim() || undefined
+      };
+
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productType: selectedProduct,
+          bookPrefs,
+        }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Checkout failed');
+      }
+
+      const { url } = await res.json();
+
+      // Redirect to Stripe Checkout
+      if (url) {
+        window.location.href = url;
+      }
+    } catch (error) {
+      console.error('Checkout error:', error);
+      alert('Failed to start checkout. Please try again.');
+    } finally {
+      setIsCheckingOut(false);
     }
   };
 
@@ -428,6 +491,141 @@ export const GeneratorForm = ({ onSubmit, onBack, isGenerating }: GeneratorFormP
           </div>
         </form>
       </div>
+
+      {/* Payment Modal */}
+      {showPaymentModal && prices && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-amber-600 to-amber-700 p-6 text-white">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="font-cinzel text-2xl mb-1">Create Your Book</h3>
+                  <p className="text-amber-100 text-sm">365 personalized history entries for {name}</p>
+                </div>
+                <button
+                  onClick={() => setShowPaymentModal(false)}
+                  className="text-amber-100 hover:text-white"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Product Options */}
+            <div className="p-6 space-y-4">
+              {/* Digital Only */}
+              <button
+                onClick={() => setSelectedProduct('digital')}
+                className={`w-full p-4 rounded-xl border-2 text-left transition-all flex gap-4 ${
+                  selectedProduct === 'digital'
+                    ? 'border-amber-600 bg-amber-50'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className={`p-3 rounded-full ${
+                  selectedProduct === 'digital' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  <Download className="w-6 h-6" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-semibold text-slate-900">{prices.digital.name}</div>
+                      <div className="text-sm text-slate-500">{prices.digital.description}</div>
+                    </div>
+                    <div className="text-xl font-bold text-slate-900">{prices.digital.priceFormatted}</div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" /> PDF Download
+                    </span>
+                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" /> EPUB for Kindle
+                    </span>
+                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Online Reader
+                    </span>
+                  </div>
+                </div>
+                {selectedProduct === 'digital' && (
+                  <div className="text-amber-600">
+                    <Check className="w-6 h-6" />
+                  </div>
+                )}
+              </button>
+
+              {/* Printed + Digital */}
+              <button
+                onClick={() => setSelectedProduct('printedDigital')}
+                className={`w-full p-4 rounded-xl border-2 text-left transition-all flex gap-4 ${
+                  selectedProduct === 'printedDigital'
+                    ? 'border-amber-600 bg-amber-50'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className={`p-3 rounded-full ${
+                  selectedProduct === 'printedDigital' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                }`}>
+                  <Printer className="w-6 h-6" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="font-semibold text-slate-900 flex items-center gap-2">
+                        {prices.printedDigital.name}
+                        <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">Best Value</span>
+                      </div>
+                      <div className="text-sm text-slate-500">{prices.printedDigital.description}</div>
+                    </div>
+                    <div className="text-xl font-bold text-slate-900">{prices.printedDigital.priceFormatted}</div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Hardcover Book
+                    </span>
+                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" /> Free Shipping
+                    </span>
+                    <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3" /> + All Digital Formats
+                    </span>
+                  </div>
+                </div>
+                {selectedProduct === 'printedDigital' && (
+                  <div className="text-amber-600">
+                    <Check className="w-6 h-6" />
+                  </div>
+                )}
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 bg-slate-50 border-t border-slate-100">
+              <button
+                onClick={handleCheckout}
+                disabled={isCheckingOut}
+                className="w-full flex items-center justify-center gap-2 py-4 bg-amber-600 text-white font-medium text-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all rounded-xl shadow-lg"
+              >
+                {isCheckingOut ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                    Preparing checkout...
+                  </span>
+                ) : (
+                  <>
+                    <CreditCard className="w-5 h-5" />
+                    Continue to Payment
+                  </>
+                )}
+              </button>
+              <p className="text-center text-xs text-slate-500 mt-3">
+                Secure payment powered by Stripe. Your book will begin generating after payment.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

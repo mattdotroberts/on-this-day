@@ -66,6 +66,7 @@ export async function GET(
       viewCount: book.viewCount + (isOwner ? 0 : 1),
       shareToken: isOwner ? book.shareToken : undefined,
       birthdayMessage: book.birthdayMessage || undefined,
+      prefaceText: book.prefaceText || undefined,
     };
 
     return NextResponse.json(clientBook);
@@ -106,6 +107,7 @@ export async function PATCH(
     if (body.isPublic !== undefined) updateData.isPublic = body.isPublic;
     if (body.coverImage) updateData.coverImageUrl = body.coverImage;
     if (body.coverStyle) updateData.coverStyle = body.coverStyle;
+    if (body.prefaceText !== undefined) updateData.prefaceText = body.prefaceText;
 
     updateData.updatedAt = new Date();
 

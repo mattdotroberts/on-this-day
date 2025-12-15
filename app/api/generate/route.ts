@@ -42,10 +42,24 @@ export async function POST(request: NextRequest) {
     const prefs: UserPreferences = await request.json();
     const { searchParams } = new URL(request.url);
     const bookType = searchParams.get('type') || 'sample';
+    const coverOnly = searchParams.get('coverOnly') === 'true';
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: 'API key not configured' }, { status: 500 });
+    }
+
+    // Cover-only regeneration (for existing books)
+    if (coverOnly) {
+      const ai = new GoogleGenAI({ apiKey });
+      const result = await generateBookCover(ai, prefs);
+      if (result.error) {
+        return NextResponse.json(
+          { error: result.error },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ coverImage: result.coverImage });
     }
 
     // Full book generation requires authentication
@@ -102,12 +116,12 @@ export async function POST(request: NextRequest) {
 
     // Sample generation - synchronous (existing logic)
     const ai = new GoogleGenAI({ apiKey });
-    const [entries, coverImage] = await Promise.all([
+    const [entries, coverResult] = await Promise.all([
       generateBookEntries(ai, prefs),
       generateBookCover(ai, prefs),
     ]);
 
-    return NextResponse.json({ entries, coverImage });
+    return NextResponse.json({ entries, coverImage: coverResult.coverImage });
   } catch (error) {
     console.error('Generation error:', error);
     return NextResponse.json(
@@ -249,42 +263,71 @@ async function generateBookEntries(
   return entries;
 }
 
+interface CoverResult {
+  coverImage?: string;
+  error?: string;
+}
+
 async function generateBookCover(
   ai: GoogleGenAI,
   prefs: UserPreferences
-): Promise<string | undefined> {
+): Promise<CoverResult> {
   const stylePrompt = COVER_PROMPTS[prefs.coverStyle] || COVER_PROMPTS.classic;
 
+  // Cover text options (defaults if not provided)
+  const includeCoverText = prefs.includeCoverText !== false; // Default true
+  const coverTitle = prefs.coverTitle || 'On This Day';
+  const coverSubtitle = prefs.coverSubtitle || `Curated for ${prefs.name}`;
+
+  // Build text instruction only if text should be included
+  const textInstruction = includeCoverText
+    ? `
+    Include the following text prominently on the cover:
+    - Title: "${coverTitle}" (large, elegant typography at the top)
+    - Subtitle: "${coverSubtitle}" (smaller, below the title)
+    The text should be readable, well-integrated into the design, and styled to match the overall aesthetic.
+    `
+    : 'Do NOT include any text on the cover. Pure visual design only.';
+
+  // Craft a safe, descriptive prompt for image generation
   const prompt = `
-    A beautiful, high-quality book cover image for a book titled "A Year's History Of ${prefs.name}".
-
-    The cover should visually represent these themes: ${prefs.interests.join(', ')}.
-
-    STYLE: ${stylePrompt}
-    FORMAT: Portrait aspect ratio (book cover).
-
-    No text on the image if possible, or very minimal.
-  `;
+    A beautiful artistic book cover design.
+    ${textInstruction}
+    Theme: history, heritage, and personal milestones.
+    Visual elements inspired by: ${prefs.interests.slice(0, 3).join(', ')}.
+    Style: ${stylePrompt}
+    Format: Portrait aspect ratio suitable for a book cover.
+    Professional quality, elegant design with subtle textures and warm colors.
+  `.trim();
 
   try {
-    // Use Imagen 3 for image generation
-    const response = await ai.models.generateImages({
-      model: 'imagen-3.0-generate-002',
-      prompt: prompt,
+    console.log('Attempting image generation with prompt:', prompt.substring(0, 100) + '...');
+
+    // Use Gemini 2.5 Flash Image (Nano Banana) - works in EU
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: `Generate an image: ${prompt}`,
       config: {
-        numberOfImages: 1,
-        aspectRatio: '3:4', // Portrait for book cover
+        responseModalities: ['image', 'text'],
       },
     });
 
-    // Imagen 3 returns images directly
-    const image = response.generatedImages?.[0];
-    if (image?.image?.imageBytes) {
-      return `data:image/png;base64,${image.image.imageBytes}`;
+    // Check for inline image data in the response
+    const parts = response.candidates?.[0]?.content?.parts;
+    if (parts) {
+      for (const part of parts) {
+        if (part.inlineData?.mimeType?.startsWith('image/')) {
+          console.log('Gemini 2.5 Flash Image succeeded');
+          return { coverImage: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` };
+        }
+      }
     }
-    return undefined;
+
+    console.warn('No image in response');
+    return { error: 'No image was returned from the AI model' };
   } catch (error) {
-    console.error('Cover generation failed:', error);
-    return undefined;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('Cover generation failed:', { error: errorMessage });
+    return { error: errorMessage };
   }
 }

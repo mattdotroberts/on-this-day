@@ -8,6 +8,8 @@ export const subscriptionStatusEnum = pgEnum('subscription_status', ['active', '
 export const jobStatusEnum = pgEnum('job_status', ['pending', 'processing', 'completed', 'failed']);
 export const bookTypeEnum = pgEnum('book_type', ['sample', 'full']);
 export const generationStatusEnum = pgEnum('generation_status', ['pending', 'generating', 'complete', 'failed']);
+export const productTypeEnum = pgEnum('product_type', ['digital', 'printedDigital']);
+export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'processing', 'succeeded', 'failed', 'refunded']);
 
 // Users table - synced from Neon Auth / Stack Auth
 export const users = pgTable('users', {
@@ -37,6 +39,7 @@ export const books = pgTable('books', {
   entries: jsonb('entries').$type<BookEntry[]>(),
   coverImageUrl: text('cover_image_url'),
   birthdayMessage: text('birthday_message'),
+  prefaceText: text('preface_text'),
 
   // Generation tracking
   bookType: bookTypeEnum('book_type').notNull().default('sample'),
@@ -149,6 +152,31 @@ export const subscriptions = pgTable('subscriptions', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
+// Purchases - records of what users bought (digital or print+digital)
+export const purchases = pgTable('purchases', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  bookId: uuid('book_id').references(() => books.id, { onDelete: 'set null' }),
+
+  // What they bought
+  productType: productTypeEnum('product_type').notNull(),
+  priceId: text('price_id').notNull(), // Stripe price ID
+  amountCents: integer('amount_cents').notNull(),
+
+  // Payment status
+  paymentStatus: paymentStatusEnum('payment_status').notNull().default('pending'),
+  stripeSessionId: text('stripe_session_id').unique(),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+
+  // Book preferences (stored before book is created)
+  bookPrefs: jsonb('book_prefs').$type<BookPreferences>(),
+
+  // Timestamps
+  paidAt: timestamp('paid_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 // Generation jobs - for background processing of full books
 export const generationJobs = pgTable('generation_jobs', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -192,6 +220,28 @@ export interface BookEntry {
   sources?: { title: string; url: string }[];
 }
 
+export interface BookPreferences {
+  name: string;
+  birthYear: string;
+  birthDay: string;
+  birthMonth: string;
+  interests: string[];
+  blendLevel: 'focused' | 'diverse';
+  coverStyle: 'classic' | 'minimalist' | 'whimsical' | 'cinematic' | 'retro';
+  birthdayMessage?: string;
+}
+
+// Error logging for debugging and monitoring
+export const errorLogs = pgTable('error_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  errorType: text('error_type').notNull(), // 'narration', 'epub', 'generation', 'api', etc.
+  errorMessage: text('error_message').notNull(),
+  errorStack: text('error_stack'),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Type exports for use in application
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -206,3 +256,7 @@ export type Subscription = typeof subscriptions.$inferSelect;
 export type NewSubscription = typeof subscriptions.$inferInsert;
 export type GenerationJob = typeof generationJobs.$inferSelect;
 export type NewGenerationJob = typeof generationJobs.$inferInsert;
+export type Purchase = typeof purchases.$inferSelect;
+export type NewPurchase = typeof purchases.$inferInsert;
+export type ErrorLog = typeof errorLogs.$inferSelect;
+export type NewErrorLog = typeof errorLogs.$inferInsert;

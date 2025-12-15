@@ -72,7 +72,13 @@ export async function POST(
     // Check if entry already exists for this date
     const existingEntry = entries.find(e => {
       const entryDate = e.day.toLowerCase();
-      return entryDate.includes(month.toLowerCase()) && entryDate.includes(dayNum.toString());
+      // Parse the entry's day to get exact day number
+      const parts = e.day.trim().split(/\s+/);
+      const entryDayNum = parseInt(parts.find(p => /^\d+$/.test(p)) || '0', 10);
+      const entryMonth = parts.find(p => MONTHS.some(m => m.toLowerCase().startsWith(p.toLowerCase())));
+
+      // Match both month and exact day number
+      return entryMonth?.toLowerCase().startsWith(month.toLowerCase().slice(0, 3)) && entryDayNum === dayNum;
     });
 
     if (existingEntry) {

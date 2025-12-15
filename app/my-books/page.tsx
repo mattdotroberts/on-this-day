@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useUser, authEnabled } from '@/lib/auth-client';
-import { BookOpen, Loader2, Trash2, Globe, Lock, Eye, ArrowLeft, RefreshCw } from 'lucide-react';
+import { BookOpen, Loader2, Trash2, Globe, Lock, Eye, ArrowLeft, RefreshCw, CheckCircle, CreditCard, Printer, Download, Package } from 'lucide-react';
 import type { ClientBook } from '@/lib/types';
 
 interface GenerationJob {
@@ -26,6 +26,32 @@ interface JobWithBook {
   } | null;
 }
 
+interface Purchase {
+  id: string;
+  productType: 'digital' | 'printedDigital';
+  paymentStatus: 'pending' | 'processing' | 'succeeded' | 'failed' | 'refunded';
+  amountCents: number;
+  createdAt: string;
+  paidAt: string | null;
+  bookPrefs: {
+    name: string;
+    birthYear: string;
+  } | null;
+  book: {
+    id: string;
+    name: string;
+    birthYear: number;
+    coverImageUrl: string | null;
+    generationStatus: string;
+  } | null;
+  job: {
+    id: string;
+    status: string;
+    progress: number;
+    currentMonth: number;
+  } | null;
+}
+
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
@@ -33,11 +59,25 @@ const MONTH_NAMES = [
 
 export default function MyBooksPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const user = useUser();
   const [books, setBooks] = useState<ClientBook[]>([]);
   const [jobs, setJobs] = useState<JobWithBook[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);
   const [processingJobId, setProcessingJobId] = useState<string | null>(null);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+
+  // Check for success message from payment redirect
+  useEffect(() => {
+    if (searchParams.get('success') === 'true') {
+      setShowSuccessMessage(true);
+      // Clear URL params
+      router.replace('/my-books');
+      // Auto-hide after 5 seconds
+      setTimeout(() => setShowSuccessMessage(false), 5000);
+    }
+  }, [searchParams, router]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -47,14 +87,15 @@ export default function MyBooksPage() {
     }
   }, [router]);
 
-  // Fetch books and jobs
+  // Fetch books, jobs, and purchases
   const fetchData = useCallback(async () => {
     if (!user) return;
 
     try {
-      const [booksRes, jobsRes] = await Promise.all([
+      const [booksRes, jobsRes, purchasesRes] = await Promise.all([
         fetch(`/api/books?userId=${user.id}`),
         fetch('/api/jobs'),
+        fetch('/api/purchases'),
       ]);
 
       if (booksRes.ok) {
@@ -65,6 +106,11 @@ export default function MyBooksPage() {
       if (jobsRes.ok) {
         const jobsData = await jobsRes.json();
         setJobs(jobsData);
+      }
+
+      if (purchasesRes.ok) {
+        const purchasesData = await purchasesRes.json();
+        setPurchases(purchasesData);
       }
     } catch (error) {
       console.error('Failed to fetch data:', error);
@@ -193,10 +239,37 @@ export default function MyBooksPage() {
   const failedJobs = jobs.filter(j => j.job.status === 'failed');
   const completedBooks = books.filter(b => b.generationStatus !== 'generating');
 
+  // Purchases awaiting book creation or generating
+  const activePurchases = purchases.filter(p =>
+    p.paymentStatus === 'succeeded' && (!p.book || p.book.generationStatus !== 'complete')
+  );
+
+  // Purchases with print orders
+  const printOrders = purchases.filter(p =>
+    p.paymentStatus === 'succeeded' && p.productType === 'printedDigital'
+  );
+
   return (
     <div className="min-h-screen bg-[#FDFBF7] pb-20">
+      {/* Success Message */}
+      {showSuccessMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-50 border border-green-200 rounded-xl px-6 py-4 shadow-lg flex items-center gap-3 animate-in slide-in-from-top">
+          <CheckCircle className="w-6 h-6 text-green-600" />
+          <div>
+            <p className="font-medium text-green-800">Payment successful!</p>
+            <p className="text-sm text-green-600">Your book is being generated.</p>
+          </div>
+          <button
+            onClick={() => setShowSuccessMessage(false)}
+            className="ml-4 text-green-600 hover:text-green-800"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-50">
+      <div className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
@@ -266,6 +339,62 @@ export default function MyBooksPage() {
                         >
                           Remove
                         </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Print Orders Section */}
+            {printOrders.length > 0 && (
+              <section className="mb-12">
+                <h2 className="font-cinzel text-xl text-slate-900 mb-6 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-amber-600" />
+                  Print Orders
+                </h2>
+                <div className="space-y-4">
+                  {printOrders.map((purchase) => (
+                    <div
+                      key={purchase.id}
+                      className="bg-white rounded-xl shadow-lg border border-slate-200 p-6"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-amber-100 rounded-lg">
+                          <Printer className="w-6 h-6 text-amber-700" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-cinzel text-lg text-slate-900">
+                            {purchase.book?.name || purchase.bookPrefs?.name || 'Your Book'}
+                          </h3>
+                          <p className="text-sm text-slate-500 mb-3">
+                            Printed + Digital Edition • ${(purchase.amountCents / 100).toFixed(2)}
+                          </p>
+
+                          {/* Status Timeline */}
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="flex items-center gap-1 text-green-600">
+                              <CheckCircle className="w-4 h-4" /> Paid
+                            </span>
+                            <span className="text-slate-300">→</span>
+                            <span className={`flex items-center gap-1 ${purchase.book?.generationStatus === 'complete' ? 'text-green-600' : 'text-amber-600'}`}>
+                              {purchase.book?.generationStatus === 'complete' ? (
+                                <><CheckCircle className="w-4 h-4" /> Book Ready</>
+                              ) : (
+                                <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+                              )}
+                            </span>
+                            <span className="text-slate-300">→</span>
+                            <span className="flex items-center gap-1 text-slate-400">
+                              <Package className="w-4 h-4" /> Shipping Soon
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-slate-400">
+                            {new Date(purchase.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   ))}

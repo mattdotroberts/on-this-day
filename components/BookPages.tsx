@@ -22,17 +22,47 @@ const getIconForInterest = (interest: string) => {
   return ICONS[index];
 };
 
+// --- Helper Functions ---
+
+function getOrdinalSuffix(day: number): string {
+  if (day > 3 && day < 21) return 'th';
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+}
+
+function formatBirthDate(day: string, month: string, year: string): string {
+  const dayNum = parseInt(day);
+  return `${dayNum}${getOrdinalSuffix(dayNum)} ${month} ${year}`;
+}
+
+export function getDefaultPrefaceText(prefs: UserPreferences): string {
+  const formattedDate = formatBirthDate(prefs.birthDay, prefs.birthMonth, prefs.birthYear);
+  return `History is often told through the movements of armies and the declarations of kings. But there is another kind of history—the quiet, personal alignment of the stars on the day a new journey begins.
+
+This book holds an entry for every day of the year, each one a small discovery, including ${formattedDate}: the day you arrived, ${prefs.name}.
+
+We have woven together the threads of world events with the personal passions of ${prefs.interests.join(", ")} to create a tapestry of time, dedicated specifically to you.`;
+}
+
 // --- Components ---
 
 interface IntroductionPageProps {
   prefs: UserPreferences;
+  prefaceText?: string;
 }
 
-export const IntroductionPage = ({ prefs }: IntroductionPageProps) => {
+export const IntroductionPage = ({ prefs, prefaceText }: IntroductionPageProps) => {
+  const displayText = prefaceText || getDefaultPrefaceText(prefs);
+  const paragraphs = displayText.split('\n\n').filter(p => p.trim());
+
   return (
     <div className="book-page">
       <div className="book-shadow-spine"></div>
-      
+
       <div className="h-full flex flex-col justify-center items-center text-center px-6">
         <div className="mb-8 text-amber-600">
            <Compass className="w-12 h-12 stroke-[1]" />
@@ -43,19 +73,9 @@ export const IntroductionPage = ({ prefs }: IntroductionPageProps) => {
         </h2>
 
         <div className="font-serif-display text-slate-700 leading-loose space-y-6 text-justify">
-          <p>
-            History is often told through the movements of armies and the declarations of kings. 
-            But there is another kind of history—the quiet, personal alignment of the stars on the day a new journey begins.
-          </p>
-          <p>
-            This book is a chronicle of the year <strong>{prefs.birthYear}</strong>. 
-            It was a year of invention, culture, and change. But most importantly, it was the year 
-            that welcomed <strong>{prefs.name}</strong> to the world.
-          </p>
-          <p>
-            We have woven together the threads of world events with the personal passions of 
-            {prefs.interests.join(", ")} to create a tapestry of time, dedicated specifically to you.
-          </p>
+          {paragraphs.map((paragraph, index) => (
+            <p key={index}>{paragraph}</p>
+          ))}
         </div>
 
         <div className="mt-12 w-16 h-px bg-slate-300"></div>

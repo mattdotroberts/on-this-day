@@ -70,6 +70,17 @@ body {
   background: #d4d4d4;
 }
 
+/* Drop cap - using a more reliable approach for PDF rendering */
+.drop-cap::first-letter {
+  float: left;
+  font-family: 'Cinzel', serif;
+  font-size: 3.5em;
+  line-height: 0.8;
+  padding-right: 0.1em;
+  color: #92400e; /* amber-800 */
+  font-weight: normal;
+}
+
 @media print {
   @page {
     size: 148mm 210mm; /* A5 */
